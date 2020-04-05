@@ -1,0 +1,127 @@
+---
+title: "cancer"
+author: "Pranav Sahasrabudhe"
+date: "3/31/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(tidyr)
+library(brms)
+library(scales)
+library(rstan)
+library(bayesplot)
+library(matrixStats)
+library(tidyverse)
+library(lme4)
+fig.dim <- 4
+knitr::opts_chunk$set(echo = FALSE,cache=TRUE, message=FALSE,warning=FALSE,fig.width=2*fig.dim,
+                      fig.height=fig.dim,
+                      fig.align='center')
+options(mc.cores = parallel::detectCores())
+options(digits=2)
+```
+
+## The data
+
+```{r read_data}
+cancer<-read.csv("C:/ml/Machine Learning A-Z Template Folder/Part 2 - Regression/Section 5 - Multiple Linear Regression/Multiple_Linear_Regression/data.csv")
+cancer[,33]<-NULL
+dim(cancer)
+head(cancer)
+cancer$diagnosis<-as.numeric(as.factor(cancer$diagnosis))
+the_vars<-colnames(cancer)[2:ncol(cancer)]
+```
+
+## Visualize data 
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+cancer_t<-log(cancer[,c(-1,-2,-3)+1]+1)
+full_PCA<-prcomp(cancer_t)
+```
+
+```{r scree_plot1, fig.width=3*fig.dim, fig.height=1.8*fig.dim, echo=FALSE,cache=TRUE}
+pca_var<-full_PCA$sdev^2
+pca_var_per<-round(pca_var/sum(pca_var)*100,1)
+barplot(pca_var_per,main="Scree Plot",xlab="Principal Component",ylab="Percent Variation")
+```
+
+
+
+```{r ggplot_PCA,echo=FALSE,cache=TRUE}
+
+pca_data<-data.frame(Sample=rownames(full_PCA$rotation),X=full_PCA$rotation[,1],Y=full_PCA$rotation[,2])
+ggplot(data=pca_data,aes(x=X,y=Y,label=Sample)) +
+         geom_text() +
+         xlab(paste("PC1 - ", pca_var_per[1], "%", sep="")) +
+         ylab(paste("PC2 - ", pca_var_per[2], "%", sep="")) +
+         theme_bw() +
+         ggtitle("PCA Plot")
+         
+```
+
+
+
+#### For PC1
+```{r gene_variation_PC1,echo=FALSE,cache=TRUE}
+layout(t(1:2))
+loading_scores_1<-full_PCA$rotation[,1]
+gene_scores_1<-abs(loading_scores_1)
+gene_ranked_1<-sort(gene_scores_1,decreasing = TRUE)
+top_10_genes_1<-names(gene_ranked_1[1:10])
+hist(full_PCA$rotation[,1])
+
+plot(loading_scores_1)
+abline(h=0.055)
+```
+
+
+```{r fig.width=20, fig.height=14}
+
+image(cor(cancer[,the_vars]))
+```
+
+```{r split_data}
+set.seed(123)
+smp_size<-floor(0.75*nrow(cancer))
+train_ind<-sample(seq_len(nrow(cancer)),size=smp_size)
+train<-cancer[train_ind,]
+test<-cancer[-train_ind,]
+```
+
+
+
+Since the result variable is binary we choose binomial as family of function
+
+```{r with brms,echo=FALSE,cache=TRUE, message=FALSE,warning=FALSE,include=FALSE}
+brm_model<-brm(diagnosis ~ .,data=train[,-1],family=binomial(link='logit'),prior=c(set_prior(horseshoe(),class='b')))
+
+```
+
+
+```{r  }
+summ<-summary(brm_model)
+summ
+```
+## The Results
+```{r fig.width=20, fig.height=14}
+stanplot(brm_model)
+pp<-brms::pp_check(brm_model)
+pp + theme_bw()
+
+```
+
+```{r cache=TRUE}
+fit<-fitted(brm_model,newdata = test,re_formula = NA,summary = TRUE)
+brm_fit<-predict(brm_model)
+brms::pp_check(brm_fit)
+summary(brm_fit)
+plot(brm_model)
+plot(brm_fit)
+```
+
